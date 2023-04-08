@@ -1,0 +1,14 @@
+---
+source: src/main.rs
+expression: "&msg"
+---
+{
+  "src": "foo",
+  "dest": "bar",
+  "body": {
+    "id": 10,
+    "in_reply_to": 55,
+    "type": "echo",
+    "echo": "foobar"
+  }
+}
