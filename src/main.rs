@@ -1,110 +1,68 @@
-use std::io::StdoutLock;
+use std::io::{StdoutLock, Write};
 
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use gossip::node::{Body, Node, Payload};
+use serde_json::Deserializer;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct Message {
-    src: String,
-    dest: String,
-    body: Body,
+struct EchoNode {
+    id: usize,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct Body {
-    id: Option<usize>,
-    in_reply_to: Option<usize>,
-    #[serde(flatten)]
-    payload: Payload,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-enum Payload {
-    Echo { echo: String },
-    EchoOk,
-}
-
-struct EchoNode;
 
 impl EchoNode {
-    pub fn handle(
-        &mut self,
-        input: Message,
-        output: &mut serde_json::Serializer<StdoutLock>,
-    ) -> anyhow::Result<()> {
-        match input.body.payload {
-            Payload::Echo { echo } => {}
-            Payload::EchoOk => todo!(),
+    pub fn step<'a>(&mut self, input: Node, output: &mut StdoutLock) -> anyhow::Result<()> {
+        let reply = match input.body.payload {
+            Payload::Echo { echo } => {
+                let reply = Node {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: Payload::EchoOk { echo: echo.clone() },
+                    },
+                };
+
+                Some(reply)
+            }
+            Payload::EchoOk { .. } => None,
+            Payload::Init { .. } => {
+                let reply = Node {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: Payload::InitOk {},
+                    },
+                };
+                Some(reply)
+            }
+            Payload::InitOk => None,
+        };
+
+        if let Some(reply) = reply {
+            serde_json::to_writer(&mut *output, &reply).context("failed to serialize node")?;
+            output.write_all(b"\n").context("write trialing newline")?;
+            self.id += 1
         }
 
-        let reply = Message {
-            src: input.dest,
-            dest: input.src,
-            body: Body {
-                id: None,
-                in_reply_to: None,
-                payload: Payload::Echo {
-                    echo: "echo".to_string(),
-                },
-            },
-        };
-        todo!()
+        Ok(())
     }
 }
 
 fn main() -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
-    let stdout = std::io::stdout().lock();
+    let mut stdout = std::io::stdout().lock();
 
-    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
+    let inputs = Deserializer::from_reader(stdin).into_iter::<Node>();
+
+    let mut node = EchoNode { id: 0 };
 
     for input in inputs {
-        let input = input.context("cannot deserialize")?;
+        let input = input.context("cannot deserialize node from maelstrom")?;
+
+        node.step(input, &mut stdout)?;
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn serialize_msg() {
-        let msg = Message {
-            src: "foo".to_string(),
-            dest: "bar".to_string(),
-            body: Body {
-                id: Some(10),
-                in_reply_to: Some(55),
-                payload: Payload::Echo {
-                    echo: "foobar".to_string(),
-                },
-            },
-        };
-
-        insta::assert_json_snapshot!(&msg);
-    }
-
-    #[test]
-    fn deserialize_msg() {
-        let json = r#"
-        {
-            "src": "foo",
-            "dest": "bar",
-            "body": {
-                "id": 10,
-                "in_reply_to": 55,
-                "type": "echo",
-                "echo": "foobar"
-            }
-        }
-            "#;
-
-        let msg: Message = serde_json::from_str(json).unwrap();
-
-        insta::assert_snapshot!(format!("{:?}", msg));
-    }
 }

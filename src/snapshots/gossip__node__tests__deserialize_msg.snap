@@ -1,0 +1,5 @@
+---
+source: src/node.rs
+expression: "format!(\"{:?}\", msg)"
+---
+Node { src: "foo", dest: "bar", body: Body { id: Some(10), in_reply_to: Some(55), payload: EchoOk { echo: "foobar" } } }
