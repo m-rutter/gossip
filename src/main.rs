@@ -1,43 +1,65 @@
 use std::io::{StdoutLock, Write};
 
 use anyhow::Context;
-use gossip::node::{Body, Node, Payload};
+use gossip::node::{Body, Message};
+use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
 struct EchoNode {
     id: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+enum EchoPayload {
+    Init {
+        node_id: String,
+        node_ids: Vec<String>,
+    },
+    InitOk,
+    Echo {
+        echo: String,
+    },
+    EchoOk {
+        echo: String,
+    },
+}
+
 impl EchoNode {
-    pub fn step<'a>(&mut self, input: Node, output: &mut StdoutLock) -> anyhow::Result<()> {
+    pub fn step<'a>(
+        &mut self,
+        input: Message<EchoPayload>,
+        output: &mut StdoutLock,
+    ) -> anyhow::Result<()> {
         let reply = match input.body.payload {
-            Payload::Echo { echo } => {
-                let reply = Node {
+            EchoPayload::Echo { echo } => {
+                let reply = Message {
                     src: input.dest,
                     dest: input.src,
                     body: Body {
                         id: Some(self.id),
                         in_reply_to: input.body.id,
-                        payload: Payload::EchoOk { echo: echo.clone() },
+                        payload: EchoPayload::EchoOk { echo: echo.clone() },
                     },
                 };
 
                 Some(reply)
             }
-            Payload::EchoOk { .. } => None,
-            Payload::Init { .. } => {
-                let reply = Node {
+            EchoPayload::EchoOk { .. } => None,
+            EchoPayload::Init { .. } => {
+                let reply = Message {
                     src: input.dest,
                     dest: input.src,
                     body: Body {
                         id: Some(self.id),
                         in_reply_to: input.body.id,
-                        payload: Payload::InitOk {},
+                        payload: EchoPayload::InitOk {},
                     },
                 };
                 Some(reply)
             }
-            Payload::InitOk => None,
+            EchoPayload::InitOk => None,
         };
 
         if let Some(reply) = reply {
@@ -54,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
-    let inputs = Deserializer::from_reader(stdin).into_iter::<Node>();
+    let inputs = Deserializer::from_reader(stdin).into_iter::<Message<EchoPayload>>();
 
     let mut node = EchoNode { id: 0 };
 
