@@ -1,7 +1,7 @@
 use std::io::{StdoutLock, Write};
 
 use anyhow::Context;
-use gossip::node::{Body, Message};
+use gossip::message::{Body, Message};
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
