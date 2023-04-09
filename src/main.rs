@@ -4,6 +4,7 @@ use anyhow::Context;
 use gossip::node::{Body, Message};
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
+use uuid::Uuid;
 
 struct EchoNode {
     id: usize,
@@ -23,6 +24,10 @@ enum EchoPayload {
     },
     EchoOk {
         echo: String,
+    },
+    Generate,
+    GenerateOk {
+        id: String,
     },
 }
 
@@ -60,6 +65,22 @@ impl EchoNode {
                 Some(reply)
             }
             EchoPayload::InitOk => None,
+            EchoPayload::Generate => {
+                let reply = Message {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: EchoPayload::GenerateOk {
+                            id: Uuid::new_v4().to_string(),
+                        },
+                    },
+                };
+
+                Some(reply)
+            }
+            EchoPayload::GenerateOk { .. } => None,
         };
 
         if let Some(reply) = reply {
