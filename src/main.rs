@@ -1,4 +1,7 @@
-use std::io::{StdoutLock, Write};
+use std::{
+    collections::HashMap,
+    io::{StdoutLock, Write},
+};
 
 use anyhow::Context;
 use gossip::node::{Body, Message};
@@ -8,6 +11,7 @@ use uuid::Uuid;
 
 struct EchoNode {
     id: usize,
+    messages: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +33,18 @@ enum EchoPayload {
     GenerateOk {
         id: String,
     },
+    Broadcast {
+        message: usize,
+    },
+    BroadcastOk,
+    Read,
+    ReadOk {
+        messages: Vec<usize>,
+    },
+    Topology {
+        topology: HashMap<String, Vec<String>>,
+    },
+    TopologyOk,
 }
 
 impl EchoNode {
@@ -52,6 +68,7 @@ impl EchoNode {
                 Some(reply)
             }
             EchoPayload::EchoOk { .. } => None,
+
             EchoPayload::Init { .. } => {
                 let reply = Message {
                     src: input.dest,
@@ -65,6 +82,7 @@ impl EchoNode {
                 Some(reply)
             }
             EchoPayload::InitOk => None,
+
             EchoPayload::Generate => {
                 let reply = Message {
                     src: input.dest,
@@ -81,6 +99,55 @@ impl EchoNode {
                 Some(reply)
             }
             EchoPayload::GenerateOk { .. } => None,
+
+            EchoPayload::Broadcast { message } => {
+                self.messages.push(message);
+
+                let reply = Message {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: EchoPayload::BroadcastOk,
+                    },
+                };
+
+                Some(reply)
+            }
+            EchoPayload::BroadcastOk => todo!(),
+
+            EchoPayload::Read => {
+                let reply = Message {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: EchoPayload::ReadOk {
+                            messages: self.messages.clone(),
+                        },
+                    },
+                };
+
+                Some(reply)
+            }
+            EchoPayload::ReadOk { .. } => None,
+
+            EchoPayload::Topology { .. } => {
+                let reply = Message {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: EchoPayload::TopologyOk,
+                    },
+                };
+
+                Some(reply)
+            }
+            EchoPayload::TopologyOk => None,
         };
 
         if let Some(reply) = reply {
@@ -99,7 +166,10 @@ fn main() -> anyhow::Result<()> {
 
     let inputs = Deserializer::from_reader(stdin).into_iter::<Message<EchoPayload>>();
 
-    let mut node = EchoNode { id: 0 };
+    let mut node = EchoNode {
+        id: 0,
+        messages: vec![],
+    };
 
     for input in inputs {
         let input = input.context("cannot deserialize node from maelstrom")?;
